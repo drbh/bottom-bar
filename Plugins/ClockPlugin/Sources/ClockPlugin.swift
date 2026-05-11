@@ -8,7 +8,6 @@ class ClockBarPlugin: NSObject, BottomBarPlugin {
     let icon = ""
     let panelWidth: CGFloat = 0
     let panelHeight: CGFloat = 0
-    let side = "right"
 
     func makeContentView(close: @escaping () -> Void) -> NSView { NSView() }
 
@@ -26,6 +25,7 @@ private struct WorldClocksView: View {
         ("UTC", TimeZone(identifier: "UTC")!),
         ("CET", TimeZone(identifier: "Europe/Paris")!),
         ("CA", TimeZone(identifier: "America/Los_Angeles")!),
+        ("NY", TimeZone(identifier: "America/New_York")!),
     ]
 
     var body: some View {

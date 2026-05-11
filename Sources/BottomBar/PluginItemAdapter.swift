@@ -6,11 +6,17 @@ import BottomBarSDK
 /// a `BottomBarItem` (AnyView-based, used by the host bar).
 struct PluginItemAdapter: BottomBarItem {
     let plugin: BottomBarPlugin
+    let sideOverride: String?
+
+    init(plugin: BottomBarPlugin, sideOverride: String? = nil) {
+        self.plugin = plugin
+        self.sideOverride = sideOverride
+    }
 
     var id: String { plugin.id }
     var title: String { plugin.title }
     var icon: String { plugin.icon }
-    var side: String { plugin.side ?? "left" }
+    var side: String { sideOverride ?? "left" }
 
     var panelSize: CGSize {
         let w = plugin.panelWidth

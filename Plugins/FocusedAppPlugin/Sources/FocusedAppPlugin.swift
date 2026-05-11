@@ -8,7 +8,6 @@ class FocusedAppBarPlugin: NSObject, BottomBarPlugin {
     let icon = ""
     let panelWidth: CGFloat = 0
     let panelHeight: CGFloat = 0
-    let side = "right"
 
     func makeContentView(close: @escaping () -> Void) -> NSView { NSView() }
 

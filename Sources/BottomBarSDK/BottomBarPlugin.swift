@@ -31,10 +31,6 @@ import SwiftUI
     /// Wrap SwiftUI views with `NSHostingView`.
     func makeContentView(close: @escaping () -> Void) -> NSView
 
-    /// Which side of the bar this plugin appears on: "left" or "right".
-    /// Defaults to "left" if not implemented.
-    @objc optional var side: String { get }
-
     /// Optional: provide a custom inline view for the bar itself.
     /// When nil, the default icon+title button is used.
     /// Wrap SwiftUI views with `NSHostingView`.
