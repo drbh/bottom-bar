@@ -1,22 +1,16 @@
 import AppKit
 
-// Register your bottom bar items here — just like adding menu bar extras.
+// Plugin manager — loads .bundle plugins from ~/.bottombar/plugins/
+let pluginManager = PluginManager()
+
 let bar = BottomBarController(
-    items: [
-        AerospaceBarItem(),
-        UptimeBarItem(),
-        CpuBarItem(),
-        MemoryBarItem(),
-        DiskBarItem(),
-        NetworkBarItem(),
-        PRsBarItem(),
-    ],
-    rightItems: [
-        FocusedAppBarItem(),
-        LocationBarItem(),
-        ClockBarItem(),
-    ]
+    items: pluginManager.currentItems()
 )
+
+// Hot-reload: when plugins change, update the bar
+pluginManager.onPluginsChanged = { pluginItems in
+    bar.replacePluginItems(pluginItems)
+}
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
@@ -24,6 +18,7 @@ app.setActivationPolicy(.accessory)
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         bar.show()
+        pluginManager.start()
     }
 }
 

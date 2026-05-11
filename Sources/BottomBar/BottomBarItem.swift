@@ -26,6 +26,9 @@ protocol BottomBarItem {
     /// Call `close` to dismiss the panel programmatically.
     func makeContent(close: @escaping () -> Void) -> AnyView
 
+    /// Which side of the bar: "left" or "right". Defaults to "left".
+    var side: String { get }
+
     /// Optional: provide a custom inline view for the bar itself.
     /// When nil, the default icon+title button is used.
     func makeBarView() -> AnyView?
@@ -33,4 +36,5 @@ protocol BottomBarItem {
 
 extension BottomBarItem {
     func makeBarView() -> AnyView? { nil }
+    var side: String { "left" }
 }

@@ -14,26 +14,43 @@ class BottomBarController {
     static let arrowHeight: CGFloat = 8
 
     private var barWindow: NSWindow!
-    private var items: [BottomBarItem] = []
-    private var rightItems: [BottomBarItem] = []
+    private var allItems: [BottomBarItem] = []
     private var openPanels: [String: NSWindow] = [:]
     private let state = BottomBarState()
     private var localMonitor: Any?
     private var globalMonitor: Any?
 
-    init(items: [BottomBarItem], rightItems: [BottomBarItem] = []) {
-        self.items = items
-        self.rightItems = rightItems
+    private var items: [BottomBarItem] {
+        allItems.filter { $0.side == "left" }
+    }
+
+    private var rightItems: [BottomBarItem] {
+        allItems.filter { $0.side == "right" }
+    }
+
+    init(items: [BottomBarItem]) {
+        self.allItems = items
     }
 
     func addItem(_ item: BottomBarItem) {
-        items.append(item)
+        allItems.append(item)
         rebuildBarContent()
     }
 
     func removeItem(id: String) {
-        items.removeAll { $0.id == id }
+        allItems.removeAll { $0.id == id }
         dismissPanel(id: id)
+        rebuildBarContent()
+    }
+
+    /// Replace all plugin-loaded items (called by PluginManager on hot-reload).
+    func replacePluginItems(_ newItems: [BottomBarItem]) {
+        let oldIds = Set(allItems.map(\.id))
+        let newIds = Set(newItems.map(\.id))
+        for id in oldIds.subtracting(newIds) {
+            dismissPanel(id: id)
+        }
+        allItems = newItems
         rebuildBarContent()
     }
 
