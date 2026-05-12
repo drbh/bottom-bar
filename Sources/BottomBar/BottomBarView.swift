@@ -117,7 +117,7 @@ struct PanelWrapperView: View {
         VStack(spacing: 0) {
             // Main content area
             innerContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
                         .fill(.ultraThickMaterial)
@@ -129,7 +129,7 @@ struct PanelWrapperView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .shadow(color: .black.opacity(0.2), radius: 10, y: -2)
 
-            // Arrow pointing down toward the bar, aligned to the button
+            // Arrow pointing down toward the bar
             Canvas { context, size in
                 let cx = min(max(arrowXOffset, 12), panelWidth - 12)
                 var path = Path()

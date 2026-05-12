@@ -115,15 +115,39 @@ class BottomBarController {
         let size = item.panelSize
         guard size != .zero else { return }
 
-        let totalHeight = size.height + Self.arrowHeight
+        let panelWidth = size.width
+        let innerContent = item.makeContent(close: { [weak self] in
+            self?.dismissAllPanels()
+        })
+
+        // Build the full panel view
+        // Use a temporary x position; we'll set the real frame after measuring
+        let arrowXGuess = buttonFrame.midX - (buttonFrame.midX - panelWidth / 2)
+
+        let wrapperView = PanelWrapperView(
+            arrowXOffset: arrowXGuess,
+            panelWidth: panelWidth,
+            innerContent: innerContent
+        )
+
+        let hostingView = NSHostingView(rootView: wrapperView)
+        // Give it the target width so it can compute height
+        hostingView.frame.size.width = panelWidth
+        hostingView.layoutSubtreeIfNeeded()
+        let measuredHeight = hostingView.fittingSize.height
+        let contentHeight = measuredHeight > 0 ? measuredHeight : (size.height + Self.arrowHeight)
+
+        // Panel sits just above the bottom bar
+        let panelY = screen.frame.origin.y + Self.barHeight + 1
+        let maxHeight = screen.visibleFrame.maxY - panelY
+        let clampedHeight = min(contentHeight, maxHeight)
 
         let panelX = min(
-            max(buttonFrame.midX - size.width / 2, screen.frame.origin.x + 4),
-            screen.frame.origin.x + screen.frame.width - size.width - 4
+            max(buttonFrame.midX - panelWidth / 2, screen.frame.origin.x + 4),
+            screen.frame.origin.x + screen.frame.width - panelWidth - 4
         )
-        let panelY = screen.frame.origin.y + Self.barHeight + 1
 
-        let panelFrame = NSRect(x: panelX, y: panelY, width: size.width, height: totalHeight)
+        let panelFrame = NSRect(x: panelX, y: panelY, width: panelWidth, height: clampedHeight)
 
         let panel = NSPanel(
             contentRect: panelFrame,
@@ -137,18 +161,17 @@ class BottomBarController {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
 
-        let arrowScreenX = buttonFrame.midX
-        let arrowRelativeX = arrowScreenX - panelFrame.origin.x
+        // Recompute arrow position with actual panel frame
+        let arrowRelativeX = buttonFrame.midX - panelFrame.origin.x
 
-        let content = PanelWrapperView(
+        // Rebuild with correct arrow offset
+        let finalContent = PanelWrapperView(
             arrowXOffset: arrowRelativeX,
-            panelWidth: size.width,
-            innerContent: item.makeContent(close: { [weak self] in
-                self?.dismissAllPanels()
-            })
+            panelWidth: panelWidth,
+            innerContent: innerContent
         )
 
-        panel.contentView = NSHostingView(rootView: content)
+        panel.contentView = NSHostingView(rootView: finalContent)
         panel.orderFrontRegardless()
         openPanels[itemId] = panel
     }
