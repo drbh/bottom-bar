@@ -10,5 +10,7 @@
     <string>BottomBar uses your location to display your current city.</string>
     <key>NSLocationUsageDescription</key>
     <string>BottomBar uses your location to display your current city.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>BottomBar launches MiniMe which uses the camera.</string>
 </dict>
 </plist>

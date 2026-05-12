@@ -23,6 +23,7 @@ for plugin_dir in "$SCRIPT_DIR"/*/; do
     cp "$plugin_dir/.build/debug/lib${plugin_name}.dylib" "$bundle_dir/Contents/MacOS/$plugin_name"
     cp "$plugin_dir/Sources/Info.plist" "$bundle_dir/Contents/Info.plist"
 
+    codesign --force --sign - "$bundle_dir/Contents/MacOS/$plugin_name"
     echo "  -> $bundle_dir"
 done
 
