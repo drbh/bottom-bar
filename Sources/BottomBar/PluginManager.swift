@@ -3,19 +3,49 @@ import BottomBarSDK
 
 // MARK: - Config Model
 
-/// Represents `~/.bottombar/config.jsonc`.
-struct BottomBarConfig: Codable {
-    /// Ordered list of plugin IDs for the left side of the bar.
+/// Represents a single bar definition inside `~/.bottombar/config.jsonc`.
+struct BarConfig: Codable {
+    /// Ordered list of plugin IDs for the left side.
     var left: [String]?
-    /// Ordered list of plugin IDs for the right side of the bar.
+    /// Ordered list of plugin IDs for the right side.
     var right: [String]?
+    /// Background color: hex string (e.g. "#1a1a2e") or "none" for transparent.
+    var background: String?
+    /// Whether clicks on empty bar areas pass through to windows below (e.g. the Dock).
+    var passthrough: Bool?
+    /// Top border color: hex string (e.g. "#ffffff") or "none" to hide.
+    var borderColor: String?
 
-    /// All enabled IDs across both sides.
     var allIds: [String] {
         (left ?? []) + (right ?? [])
     }
+}
 
-    static let defaultConfig = BottomBarConfig(left: nil, right: nil)
+/// Represents `~/.bottombar/config.jsonc`.
+/// Supports both the legacy single-bar format (`left`/`right` at top level)
+/// and the new multi-bar format (`bars` array).
+struct BottomBarConfig: Codable {
+    /// Legacy single-bar keys (kept for backwards compat).
+    var left: [String]?
+    var right: [String]?
+    /// Multi-bar definitions — first bar is at the bottom, subsequent bars stack above.
+    var bars: [BarConfig]?
+
+    /// Resolved list of bar configs. Falls back to legacy format when `bars` is nil.
+    var resolvedBars: [BarConfig] {
+        if let bars = bars, !bars.isEmpty {
+            return bars
+        }
+        // Legacy: single bar from top-level left/right
+        return [BarConfig(left: left, right: right)]
+    }
+
+    /// All enabled IDs across all bars.
+    var allIds: [String] {
+        resolvedBars.flatMap { $0.allIds }
+    }
+
+    static let defaultConfig = BottomBarConfig(left: nil, right: nil, bars: nil)
 }
 
 /// Loads `.bundle` plugins from `~/.bottombar/plugins/` and watches
@@ -59,28 +89,52 @@ class PluginManager {
         watchConfigFile()
     }
 
-    /// Returns enabled plugins in config order, with side determined by config.
-    func currentItems() -> [BottomBarItem] {
-        guard config.left != nil || config.right != nil else {
-            // No config — show all plugins, side from plugin default
-            return loadedPlugins.values.map { PluginItemAdapter(plugin: $0) }
+    /// Number of bars defined in the current config.
+    var barCount: Int {
+        config.resolvedBars.count
+    }
+
+    /// Returns the BarConfig for a given bar index.
+    func configForBar(_ index: Int) -> BarConfig? {
+        let bars = config.resolvedBars
+        guard index < bars.count else { return nil }
+        return bars[index]
+    }
+
+    /// Returns enabled plugins for a specific bar index, in config order.
+    func itemsForBar(_ index: Int) -> [BottomBarItem] {
+        let bars = config.resolvedBars
+        guard index < bars.count else { return [] }
+        let barConfig = bars[index]
+
+        guard barConfig.left != nil || barConfig.right != nil else {
+            // No config — show all plugins on bar 0 only
+            if index == 0 {
+                return loadedPlugins.values.map { PluginItemAdapter(plugin: $0) }
+            }
+            return []
         }
 
         var items: [BottomBarItem] = []
 
-        for id in config.left ?? [] {
+        for id in barConfig.left ?? [] {
             if let plugin = loadedPlugins[id] {
                 items.append(PluginItemAdapter(plugin: plugin, sideOverride: "left"))
             }
         }
 
-        for id in config.right ?? [] {
+        for id in barConfig.right ?? [] {
             if let plugin = loadedPlugins[id] {
                 items.append(PluginItemAdapter(plugin: plugin, sideOverride: "right"))
             }
         }
 
         return items
+    }
+
+    /// Returns enabled plugins for the first (bottom) bar. Legacy convenience.
+    func currentItems() -> [BottomBarItem] {
+        itemsForBar(0)
     }
 
     // MARK: - Config
@@ -329,23 +383,31 @@ class PluginManager {
         if !fm.fileExists(atPath: url.path) {
             let defaultContent = """
             {
-              // Plugins on the left side of the bar (ordered).
-              // Comment out or remove a line to hide that plugin.
-              "left": [
-                "aerospace",
-                "uptime",
-                "cpu",
-                "memory",
-                "disk",
-                "network",
-                "prs"
-              ],
-
-              // Plugins on the right side of the bar (ordered).
-              "right": [
-                "focused-app",
-                "location",
-                "clock"
+              // Each entry in "bars" defines a bar. The first bar sits at the
+              // bottom of the screen; subsequent bars stack above it.
+              "bars": [
+                {
+                  // Bottom bar
+                  "left": [
+                    "aerospace",
+                    "uptime",
+                    "cpu",
+                    "memory",
+                    "disk",
+                    "network",
+                    "prs"
+                  ],
+                  "right": [
+                    "focused-app",
+                    "location",
+                    "clock"
+                  ]
+                }
+                // Uncomment to add a second bar above the first:
+                // ,{
+                //   "left": ["my-plugin"],
+                //   "right": ["another-plugin"]
+                // }
               ]
             }
             """

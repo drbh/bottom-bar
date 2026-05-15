@@ -8,6 +8,21 @@ class BottomBarState: ObservableObject {
     @Published var activeItemId: String? = nil
 }
 
+/// Coordinates panel dismissal across multiple bar controllers.
+class BarCoordinator {
+    private var controllers: [BottomBarController] = []
+
+    func register(_ controller: BottomBarController) {
+        controllers.append(controller)
+    }
+
+    func dismissAllPanels(except: BottomBarController? = nil) {
+        for controller in controllers where controller !== except {
+            controller.dismissAllPanels()
+        }
+    }
+}
+
 /// Manages the bottom bar window and popover panels.
 class BottomBarController {
     static let barHeight: CGFloat = 24
@@ -19,6 +34,30 @@ class BottomBarController {
     private let state = BottomBarState()
     private var localMonitor: Any?
     private var globalMonitor: Any?
+    private var mouseTrackingTimer: Timer?
+
+    /// Vertical offset from the bottom of the screen.
+    let yOffset: CGFloat
+    /// Background color string from config: hex color or "none".
+    var backgroundSetting: String?
+    /// Whether clicks on empty bar areas pass through to windows below.
+    var passthrough: Bool = false {
+        didSet {
+            guard passthrough != oldValue, barWindow != nil else { return }
+            if passthrough {
+                barWindow.ignoresMouseEvents = true
+                startMouseTracking()
+            } else {
+                mouseTrackingTimer?.invalidate()
+                mouseTrackingTimer = nil
+                barWindow.ignoresMouseEvents = false
+            }
+        }
+    }
+    /// Top border color string from config: hex color or "none".
+    var borderColorSetting: String?
+    /// Shared coordinator for cross-bar panel dismissal.
+    weak var coordinator: BarCoordinator?
 
     private var items: [BottomBarItem] {
         allItems.filter { $0.side == "left" }
@@ -28,8 +67,9 @@ class BottomBarController {
         allItems.filter { $0.side == "right" }
     }
 
-    init(items: [BottomBarItem]) {
+    init(items: [BottomBarItem], yOffset: CGFloat = 0) {
         self.allItems = items
+        self.yOffset = yOffset
     }
 
     func addItem(_ item: BottomBarItem) {
@@ -59,7 +99,7 @@ class BottomBarController {
 
         let barFrame = NSRect(
             x: screen.frame.origin.x,
-            y: screen.frame.origin.y,
+            y: screen.frame.origin.y + yOffset,
             width: screen.frame.width,
             height: Self.barHeight
         )
@@ -75,11 +115,12 @@ class BottomBarController {
         barWindow.isOpaque = false
         barWindow.backgroundColor = .clear
         barWindow.hasShadow = false
-        barWindow.ignoresMouseEvents = false
+        barWindow.ignoresMouseEvents = passthrough
 
         rebuildBarContent()
         barWindow.orderFrontRegardless()
         installEventMonitors()
+        if passthrough { startMouseTracking() }
     }
 
     // MARK: - Private
@@ -90,11 +131,13 @@ class BottomBarController {
             items: items,
             rightItems: rightItems,
             state: state,
+            background: backgroundSetting,
+            borderColor: borderColorSetting,
             onItemClick: { [weak self] itemId, frame in
                 self?.togglePanel(for: itemId, relativeTo: frame)
             }
         )
-        barWindow.contentView = NSHostingView(rootView: view)
+        barWindow.contentView = ClickThroughHostingView(rootView: view)
     }
 
     private func togglePanel(for itemId: String, relativeTo buttonFrame: NSRect) {
@@ -104,6 +147,7 @@ class BottomBarController {
         }
 
         for key in openPanels.keys { dismissPanel(id: key) }
+        coordinator?.dismissAllPanels(except: self)
 
         let allItems = items + rightItems
         guard let item = allItems.first(where: { $0.id == itemId }),
@@ -137,8 +181,8 @@ class BottomBarController {
         let measuredHeight = hostingView.fittingSize.height
         let contentHeight = measuredHeight > 0 ? measuredHeight : (size.height + Self.arrowHeight)
 
-        // Panel sits just above the bottom bar
-        let panelY = screen.frame.origin.y + Self.barHeight + 1
+        // Panel sits just above this bar
+        let panelY = screen.frame.origin.y + yOffset + Self.barHeight + 1
         let maxHeight = screen.visibleFrame.maxY - panelY
         let clampedHeight = min(contentHeight, maxHeight)
 
@@ -176,7 +220,7 @@ class BottomBarController {
         openPanels[itemId] = panel
     }
 
-    private func dismissAllPanels() {
+    func dismissAllPanels() {
         for key in openPanels.keys { dismissPanel(id: key) }
         state.activeItemId = nil
     }
@@ -197,6 +241,36 @@ class BottomBarController {
         }
 
         dismissAllPanels()
+    }
+
+    private func startMouseTracking() {
+        mouseTrackingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            self?.updateMousePassthrough()
+        }
+    }
+
+    private func updateMousePassthrough() {
+        guard let window = barWindow else { return }
+        let mouse = NSEvent.mouseLocation
+
+        // If mouse isn't in the bar window, ensure passthrough
+        guard window.frame.contains(mouse) else {
+            if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
+            return
+        }
+
+        // Convert screen point to window coordinates
+        let windowPoint = NSPoint(
+            x: mouse.x - window.frame.origin.x,
+            y: mouse.y - window.frame.origin.y
+        )
+
+        if let hostingView = window.contentView as? ClickThroughHostingView<BottomBarView> {
+            let overItem = hostingView.isOverBarItem(windowPoint)
+            if window.ignoresMouseEvents == overItem {
+                window.ignoresMouseEvents = !overItem
+            }
+        }
     }
 
     private func installEventMonitors() {

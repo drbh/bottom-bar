@@ -7,15 +7,33 @@ struct BottomBarView: View {
     let items: [BottomBarItem]
     let rightItems: [BottomBarItem]
     @ObservedObject var state: BottomBarState
+    let background: String?
+    let borderColor: String?
     let onItemClick: (String, NSRect) -> Void
+
+    private var backgroundColor: Color {
+        guard let bg = background else { return Color.clear }
+        if bg.lowercased() == "none" { return Color.clear }
+        return Color(hex: bg) ?? Color.clear
+    }
+
+    private var topBorderColor: Color? {
+        guard let bc = borderColor else { return Color.primary.opacity(0.15) }
+        if bc.lowercased() == "none" { return nil }
+        return Color(hex: bc) ?? Color.primary.opacity(0.15)
+    }
 
     var body: some View {
         ZStack {
-            Color.clear
+            backgroundColor
+                .allowsHitTesting(false)
                 .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(height: 0.5)
+                    if let borderColor = topBorderColor {
+                        Rectangle()
+                            .fill(borderColor)
+                            .frame(height: 0.5)
+                            .allowsHitTesting(false)
+                    }
                 }
 
             HStack(spacing: 0) {
@@ -28,7 +46,7 @@ struct BottomBarView: View {
                         )
                     }
                 }
-                Spacer()
+                Spacer().allowsHitTesting(false)
                 ForEach(rightItems.map(\.id), id: \.self) { id in
                     if let item = rightItems.first(where: { $0.id == id }) {
                         BarItemView(
@@ -53,16 +71,19 @@ struct BarItemView: View {
     let onItemClick: (String, NSRect) -> Void
 
     var body: some View {
-        if let customView = item.makeBarView() {
-            // Custom inline view — no button chrome, no popover
-            customView
-        } else {
-            BarItemButton(
-                item: item,
-                isActive: isActive,
-                onItemClick: onItemClick
-            )
+        Group {
+            if let customView = item.makeBarView() {
+                // Custom inline view — no button chrome, no popover
+                customView
+            } else {
+                BarItemButton(
+                    item: item,
+                    isActive: isActive,
+                    onItemClick: onItemClick
+                )
+            }
         }
+        .background(BarItemHitArea())
     }
 }
 
@@ -144,6 +165,39 @@ struct PanelWrapperView: View {
     }
 }
 
+// MARK: - Click-Through Hosting View
+
+/// Marker NSView inserted behind each bar item so we can identify
+/// interactive regions during hit testing.
+class BarItemMarker: NSView {}
+
+struct BarItemHitArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> BarItemMarker { BarItemMarker() }
+    func updateNSView(_ nsView: BarItemMarker, context: Context) {}
+}
+
+/// NSHostingView subclass that exposes hit-area checking for bar items.
+/// The controller uses this to dynamically toggle `ignoresMouseEvents`
+/// so clicks on empty areas pass through to windows below (e.g. the Dock).
+class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+    /// Returns true if `pointInWindow` lands within any bar item marker's bounds.
+    func isOverBarItem(_ pointInWindow: NSPoint) -> Bool {
+        let pointInView = convert(pointInWindow, from: nil)
+        return hasMarkerAt(pointInView, in: self)
+    }
+
+    private func hasMarkerAt(_ point: NSPoint, in view: NSView) -> Bool {
+        for subview in view.subviews {
+            if subview is BarItemMarker {
+                let local = subview.convert(point, from: self)
+                if subview.bounds.contains(local) { return true }
+            }
+            if hasMarkerAt(point, in: subview) { return true }
+        }
+        return false
+    }
+}
+
 // MARK: - Helpers
 
 struct ScreenFrameGrabber: NSViewRepresentable {
@@ -192,5 +246,31 @@ struct VisualEffectBlur: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+    }
+}
+
+// MARK: - Hex Color Parsing
+
+extension Color {
+    /// Parses a hex color string like "#FF0000", "#ff0000", or "FF0000".
+    init?(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+
+        guard s.count == 6 || s.count == 8 else { return nil }
+        guard let value = UInt64(s, radix: 16) else { return nil }
+
+        if s.count == 6 {
+            let r = Double((value >> 16) & 0xFF) / 255.0
+            let g = Double((value >> 8) & 0xFF) / 255.0
+            let b = Double(value & 0xFF) / 255.0
+            self.init(red: r, green: g, blue: b)
+        } else {
+            let r = Double((value >> 24) & 0xFF) / 255.0
+            let g = Double((value >> 16) & 0xFF) / 255.0
+            let b = Double((value >> 8) & 0xFF) / 255.0
+            let a = Double(value & 0xFF) / 255.0
+            self.init(red: r, green: g, blue: b, opacity: a)
+        }
     }
 }
