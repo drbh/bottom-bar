@@ -9,10 +9,18 @@ class StocksBarPlugin: NSObject, BottomBarPlugin {
     let panelWidth: CGFloat = 0
     let panelHeight: CGFloat = 0
 
+    private var symbols: [String] = ["AAPL", "GOOGL", "TSLA", "MSFT", "AMZN"]
+
+    func setConfiguration(_ config: [String: Any]) {
+        if let syms = config["symbols"] as? [String], !syms.isEmpty {
+            symbols = syms
+        }
+    }
+
     func makeContentView(close: @escaping () -> Void) -> NSView { NSView() }
 
     func makeBarNSView() -> NSView? {
-        NSHostingView(rootView: StocksTickerView())
+        NSHostingView(rootView: StocksTickerView(symbols: symbols))
     }
 }
 
@@ -28,15 +36,18 @@ private struct StockQuote {
 
 private class StocksFetcher: ObservableObject {
     @Published var quotes: [StockQuote] = []
+    let symbols: [String]
 
-    static let symbols = ["AAPL", "GOOGL", "TSLA", "MSFT", "AMZN"]
+    init(symbols: [String]) {
+        self.symbols = symbols
+    }
 
     func fetch() {
         let group = DispatchGroup()
         var results: [String: StockQuote] = [:]
         let lock = NSLock()
 
-        for symbol in Self.symbols {
+        for symbol in symbols {
             group.enter()
             let urlString = "https://query2.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1d&range=2d"
             guard let url = URL(string: urlString) else { group.leave(); continue }
@@ -64,8 +75,8 @@ private class StocksFetcher: ObservableObject {
         }
 
         group.notify(queue: .main) { [weak self] in
-            // Preserve original symbol order
-            self?.quotes = Self.symbols.compactMap { results[$0] }
+            guard let self = self else { return }
+            self.quotes = self.symbols.compactMap { results[$0] }
         }
     }
 }
@@ -73,7 +84,14 @@ private class StocksFetcher: ObservableObject {
 // MARK: - View
 
 private struct StocksTickerView: View {
-    @StateObject private var fetcher = StocksFetcher()
+    let symbols: [String]
+    @StateObject private var fetcher: StocksFetcher
+
+    init(symbols: [String]) {
+        self.symbols = symbols
+        self._fetcher = StateObject(wrappedValue: StocksFetcher(symbols: symbols))
+    }
+
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {

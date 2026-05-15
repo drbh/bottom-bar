@@ -3,12 +3,97 @@ import BottomBarSDK
 
 // MARK: - Config Model
 
+/// A plugin reference in the config: either a bare string ID or an object with
+/// `"id"` and optional `"config"`.
+struct PluginRef: Codable {
+    let id: String
+    let config: [String: Any]?
+
+    init(id: String, config: [String: Any]? = nil) {
+        self.id = id
+        self.config = config
+    }
+
+    init(from decoder: Decoder) throws {
+        // Try bare string first
+        if let container = try? decoder.singleValueContainer(),
+           let str = try? container.decode(String.self) {
+            self.id = str
+            self.config = nil
+            return
+        }
+        // Otherwise decode object with id + optional config
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        // Decode config as raw JSON dictionary
+        if let rawConfig = try? container.decode(JSONDict.self, forKey: .config) {
+            self.config = rawConfig.value
+        } else {
+            self.config = nil
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        if config == nil {
+            var container = encoder.singleValueContainer()
+            try container.encode(id)
+        } else {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, config
+    }
+}
+
+/// Helper for decoding arbitrary JSON dictionaries.
+private struct JSONDict: Codable {
+    let value: [String: Any]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let data = try container.decode(AnyCodable.self)
+        guard let dict = data.value as? [String: Any] else {
+            throw DecodingError.typeMismatch([String: Any].self,
+                .init(codingPath: decoder.codingPath, debugDescription: "Expected dictionary"))
+        }
+        self.value = dict
+    }
+
+    func encode(to encoder: Encoder) throws {}
+}
+
+/// Type-erased Codable wrapper for arbitrary JSON values.
+private struct AnyCodable: Codable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let b = try? container.decode(Bool.self) { value = b }
+        else if let i = try? container.decode(Int.self) { value = i }
+        else if let d = try? container.decode(Double.self) { value = d }
+        else if let s = try? container.decode(String.self) { value = s }
+        else if let arr = try? container.decode([AnyCodable].self) { value = arr.map(\.value) }
+        else if let dict = try? container.decode([String: AnyCodable].self) {
+            value = dict.mapValues(\.value)
+        }
+        else if container.decodeNil() { value = NSNull() }
+        else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON type")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {}
+}
+
 /// Represents a single bar definition inside `~/.bottombar/config.jsonc`.
 struct BarConfig: Codable {
-    /// Ordered list of plugin IDs for the left side.
-    var left: [String]?
-    /// Ordered list of plugin IDs for the right side.
-    var right: [String]?
+    /// Ordered list of plugin references for the left side.
+    var left: [PluginRef]?
+    /// Ordered list of plugin references for the right side.
+    var right: [PluginRef]?
     /// Background color: hex string (e.g. "#1a1a2e") or "none" for transparent.
     var background: String?
     /// Whether clicks on empty bar areas pass through to windows below (e.g. the Dock).
@@ -17,7 +102,7 @@ struct BarConfig: Codable {
     var borderColor: String?
 
     var allIds: [String] {
-        (left ?? []) + (right ?? [])
+        (left ?? []).map(\.id) + (right ?? []).map(\.id)
     }
 }
 
@@ -26,8 +111,8 @@ struct BarConfig: Codable {
 /// and the new multi-bar format (`bars` array).
 struct BottomBarConfig: Codable {
     /// Legacy single-bar keys (kept for backwards compat).
-    var left: [String]?
-    var right: [String]?
+    var left: [PluginRef]?
+    var right: [PluginRef]?
     /// Multi-bar definitions — first bar is at the bottom, subsequent bars stack above.
     var bars: [BarConfig]?
 
@@ -117,14 +202,20 @@ class PluginManager {
 
         var items: [BottomBarItem] = []
 
-        for id in barConfig.left ?? [] {
-            if let plugin = loadedPlugins[id] {
+        for ref in barConfig.left ?? [] {
+            if let plugin = loadedPlugins[ref.id] {
+                if let config = ref.config {
+                    plugin.setConfiguration?(config)
+                }
                 items.append(PluginItemAdapter(plugin: plugin, sideOverride: "left"))
             }
         }
 
-        for id in barConfig.right ?? [] {
-            if let plugin = loadedPlugins[id] {
+        for ref in barConfig.right ?? [] {
+            if let plugin = loadedPlugins[ref.id] {
+                if let config = ref.config {
+                    plugin.setConfiguration?(config)
+                }
                 items.append(PluginItemAdapter(plugin: plugin, sideOverride: "right"))
             }
         }
@@ -155,7 +246,7 @@ class PluginManager {
 
         do {
             config = try JSONDecoder().decode(BottomBarConfig.self, from: data)
-            let summary = "left: \(config.left?.joined(separator: ", ") ?? "all"), right: \(config.right?.joined(separator: ", ") ?? "none")"
+            let summary = "left: \(config.left?.map(\.id).joined(separator: ", ") ?? "all"), right: \(config.right?.map(\.id).joined(separator: ", ") ?? "none")"
             NSLog("[PluginManager] Config loaded: \(summary)")
         } catch {
             NSLog("[PluginManager] Failed to parse config.jsonc: \(error.localizedDescription)")

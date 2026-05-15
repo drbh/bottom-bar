@@ -35,4 +35,9 @@ import SwiftUI
     /// When nil, the default icon+title button is used.
     /// Wrap SwiftUI views with `NSHostingView`.
     @objc optional func makeBarNSView() -> NSView?
+
+    /// Optional: receive per-instance configuration from config.jsonc.
+    /// Called before `makeBarNSView` / `makeContentView`.
+    /// The dictionary contains whatever the user put in the `"config"` key.
+    @objc optional func setConfiguration(_ config: [String: Any])
 }
