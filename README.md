@@ -21,18 +21,10 @@ Create your own by copying `ExamplePlugin/` and implementing the `BottomBarPlugi
 
 ## Config
 
-Edit `~/.bottombar/config.jsonc` to control which plugins are shown and their position. Changes apply live.
+Copy `config.example.jsonc` to `~/.bottombar/config.jsonc` to control which plugins are shown and where. Changes apply live.
 
-```jsonc
-{
-  "left": [
-    "aerospace",
-    "cpu",
-    // "uptime",  <- disabled
-    "memory"
-  ],
-  "right": [
-    "clock"
-  ]
-}
-```
+Some plugins need external tools: `aerospace` needs [AeroSpace](https://github.com/nikitabobko/AeroSpace), `prs` needs `gh auth login`, and `minime` needs a `minime` binary on your PATH.
+
+Plugins run as native code inside the app, only install ones you trust.
+
+Note: this app is primarily intended for personal use and may not be suitable for your machine, please feel free to contribute back, or point your agent at this project and using it as a starting point for your own bottom bar implementation.

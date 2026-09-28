@@ -1,3 +1,4 @@
 .build
 target
 bak.config.jsonc
+config.jsonc

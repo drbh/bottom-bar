@@ -1,0 +1,65 @@
+// Copy to ~/.bottombar/config.jsonc. Changes apply live.
+{
+  "bars": [
+    {
+      // "background": "#1a1a2e",
+      "borderColor": "none",
+      "background": "none",
+      "passthrough": true,
+      // "passthrough": false,
+      "left": [
+        //
+        "aerospace", // needs AeroSpace installed
+        "uptime",
+        "cpu",
+        "memory",
+        "disk",
+        "network",
+      ],
+      "right": [
+        "focused-app",
+        "location",
+        {
+          "id": "clock",
+          "config": {
+            "zones": {
+              "JP": "Asia/Tokyo",
+              "UTC": "UTC",
+              "CET": "Europe/Paris",
+              "LA": "America/Los_Angeles",
+              "NY": "America/New_York",
+              "IST": "Asia/Kolkata",
+            },
+          },
+        },
+      ],
+    },
+    {
+      // "background": "#16213e",
+      "borderColor": "#444444",
+      "background": "none",
+      "passthrough": true,
+      // "passthrough": false,
+      "left": [
+        //
+        "prs", // needs `gh auth login`
+        "projects", // or { "id": "projects", "config": { "dir": "~/code" } }
+        "downloads",
+      ],
+      "right": [
+        // {
+        //   "id": "stocks",
+        //   "config": {
+        //     "symbols": [
+        //       //
+        //       // "AAPL",
+        //       "CRWD",
+        //       "TSLA",
+        //     ],
+        //   },
+        // },
+        "minime", // or { "id": "minime", "config": { "command": "/path/to/minime" } }
+      ],
+    },
+  ],
+}

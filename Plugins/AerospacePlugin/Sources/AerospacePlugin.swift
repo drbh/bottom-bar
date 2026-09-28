@@ -24,6 +24,7 @@ private struct WorkspaceInfo: Identifiable {
 
 private struct AerospaceInlineView: View {
     @State private var workspaces: [WorkspaceInfo] = []
+    private let aerospace = ToolLocator.find("aerospace")
     private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -31,6 +32,12 @@ private struct AerospaceInlineView: View {
             Image(systemName: "square.grid.2x2")
                 .font(BarFont.regular(10))
                 .foregroundColor(.secondary)
+
+            if aerospace == nil {
+                Text("aerospace not found")
+                    .font(BarFont.regular(11))
+                    .foregroundColor(.secondary)
+            }
 
             ForEach(workspaces) { ws in
                 HStack(spacing: 2) {
@@ -54,6 +61,7 @@ private struct AerospaceInlineView: View {
     }
 
     private func refresh() {
+        guard aerospace != nil else { return }
         let focused = run("list-workspaces", ["--focused"]).trimmingCharacters(in: .whitespacesAndNewlines)
         let windowWorkspaces = run("list-windows", ["--all", "--format", "%{workspace}"])
             .split(separator: "\n")
@@ -70,8 +78,9 @@ private struct AerospaceInlineView: View {
     }
 
     private func run(_ subcommand: String, _ args: [String]) -> String {
+        guard let aerospace else { return "" }
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/aerospace")
+        proc.executableURL = aerospace
         proc.arguments = [subcommand] + args
         let pipe = Pipe()
         proc.standardOutput = pipe

@@ -9,8 +9,18 @@ class ProjectsBarPlugin: NSObject, BottomBarPlugin {
     let panelWidth: CGFloat = 250
     let panelHeight: CGFloat = 580
 
+    /// Directory to list, overridable via `"config": { "dir": "~/code" }`.
+    private var directory = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Projects")
+
+    func setConfiguration(_ config: [String: Any]) {
+        if let dir = config["dir"] as? String, !dir.isEmpty {
+            directory = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath)
+        }
+    }
+
     func makeContentView(close: @escaping () -> Void) -> NSView {
-        NSHostingView(rootView: ProjectsPanelView(close: close))
+        NSHostingView(rootView: ProjectsPanelView(directory: directory, close: close))
     }
 
     func makeBarNSView() -> NSView? {
@@ -21,10 +31,12 @@ class ProjectsBarPlugin: NSObject, BottomBarPlugin {
 private struct ProjectEntry: Identifiable {
     let id: String
     let name: String
+    let url: URL
     let modified: Date
 }
 
 private struct ProjectsPanelView: View {
+    let directory: URL
     let close: () -> Void
     @State private var projects: [ProjectEntry] = []
 
@@ -39,10 +51,8 @@ private struct ProjectsPanelView: View {
     }
 
     private func refresh() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Projects")
         guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: dir,
+            at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return }
@@ -53,7 +63,7 @@ private struct ProjectsPanelView: View {
                 guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
                       isDir.boolValue else { return nil }
                 let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                return ProjectEntry(id: url.lastPathComponent, name: url.lastPathComponent, modified: date)
+                return ProjectEntry(id: url.lastPathComponent, name: url.lastPathComponent, url: url, modified: date)
             }
             .sorted { $0.modified > $1.modified }
             .prefix(40)
@@ -102,10 +112,7 @@ private struct ProjectRow: View {
     }
 
     private func openProject() {
-        let path = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Projects")
-            .appendingPathComponent(project.name)
-        NSWorkspace.shared.open(path)
+        NSWorkspace.shared.open(project.url)
         close()
     }
 }

@@ -9,28 +9,44 @@ class MiniMeBarPlugin: NSObject, BottomBarPlugin {
     let panelWidth: CGFloat = 0
     let panelHeight: CGFloat = 0
 
+    /// Executable name or path, overridable via `"config": { "command": "..." }`.
+    private var command = "minime"
+
+    func setConfiguration(_ config: [String: Any]) {
+        if let command = config["command"] as? String, !command.isEmpty {
+            self.command = command
+        }
+    }
+
     func makeContentView(close: @escaping () -> Void) -> NSView { NSView() }
 
     func makeBarNSView() -> NSView? {
-        NSHostingView(rootView: MiniMeInlineView())
+        let model = MiniMeModel(command: command)
+        return NSHostingView(rootView: MiniMeInlineView(model: model))
     }
 }
 
 private class MiniMeModel: ObservableObject {
     @Published var isRunning = false
+    let executable: URL?
+    private let processName: String
     private var timer: Timer?
 
-    init() {
+    init(command: String) {
+        executable = ToolLocator.find(command)
+        processName = (command as NSString).lastPathComponent
         checkRunning()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.checkRunning()
         }
     }
 
+    func isMiniMe(_ app: NSRunningApplication) -> Bool {
+        app.localizedName == processName || (executable != nil && app.executableURL == executable)
+    }
+
     private func checkRunning() {
-        let running = NSWorkspace.shared.runningApplications.contains {
-            $0.localizedName == "minime" || $0.executableURL?.path == "/Users/drbh/.cargo/bin/minime"
-        }
+        let running = NSWorkspace.shared.runningApplications.contains(where: isMiniMe)
         DispatchQueue.main.async {
             self.isRunning = running
         }
@@ -38,7 +54,7 @@ private class MiniMeModel: ObservableObject {
 }
 
 private struct MiniMeInlineView: View {
-    @StateObject private var model = MiniMeModel()
+    @StateObject var model: MiniMeModel
     @State private var isHovered = false
 
     var body: some View {
@@ -62,21 +78,23 @@ private struct MiniMeInlineView: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(model.executable == nil)
+        .help(model.executable == nil ? "minime not found" : "")
         .onHover { isHovered = $0 }
     }
 
     private func toggle() {
         if model.isRunning {
             // Kill running minime processes
-            for app in NSWorkspace.shared.runningApplications
-                where app.localizedName == "minime" || app.executableURL?.path == "/Users/drbh/.cargo/bin/minime" {
+            for app in NSWorkspace.shared.runningApplications where model.isMiniMe(app) {
                 app.terminate()
             }
-        } else {
+        } else if let executable = model.executable {
             DispatchQueue.global().async {
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                proc.arguments = ["-l", "-c", "/Users/drbh/.cargo/bin/minime"]
+                // Login shell so minime gets the user's environment.
+                proc.arguments = ["-l", "-c", "exec \"$0\"", executable.path]
                 proc.standardOutput = FileHandle.nullDevice
                 proc.standardError = FileHandle.nullDevice
                 try? proc.run()

@@ -18,6 +18,7 @@ class PRsBarPlugin: NSObject, BottomBarPlugin {
 
 private class PRsModel: ObservableObject {
     @Published var count: Int? = nil
+    @Published var error: String? = nil
     private var timer: Timer?
 
     init() {
@@ -29,8 +30,12 @@ private class PRsModel: ObservableObject {
 
     private func fetch() {
         DispatchQueue.global(qos: .utility).async {
+            guard let gh = ToolLocator.find("gh") else {
+                DispatchQueue.main.async { self.error = "gh not found" }
+                return
+            }
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/gh")
+            proc.executableURL = gh
             proc.arguments = ["api", "search/issues?q=is:pr+author:@me+state:open+archived:false&per_page=1", "--jq", ".total_count"]
             let pipe = Pipe()
             proc.standardOutput = pipe
@@ -43,7 +48,10 @@ private class PRsModel: ObservableObject {
                    let n = Int(str) {
                     DispatchQueue.main.async {
                         self.count = n
+                        self.error = nil
                     }
+                } else if proc.terminationStatus != 0 {
+                    DispatchQueue.main.async { self.error = "run gh auth login" }
                 }
             } catch {}
         }
@@ -58,7 +66,11 @@ private struct PRsInlineView: View {
             Text("PRs")
                 .font(BarFont.medium(10))
                 .foregroundColor(.secondary)
-            if let count = model.count {
+            if let error = model.error {
+                Text(error)
+                    .font(BarFont.regular(11))
+                    .foregroundColor(.secondary)
+            } else if let count = model.count {
                 Text("\(count)")
                     .font(BarFont.regular(12))
             } else {
