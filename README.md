@@ -2,16 +2,20 @@
 
 <img width="2056" height="1329" alt="bottom-bar-masked" src="https://github.com/user-attachments/assets/1e4fcff3-76ee-4585-a18b-6ee67b0b757a" />
 
+note: the example above has two bottom bars stacked for more space - default case is a single bottom bar
+
+### What is this?
+
 A macOS bottom status bar with hot-loadable plugins.
 
-## Build & Run
+#### Build & Run
 
 ```bash
 ./build.sh
 open .build/debug/BottomBar.app
 ```
 
-## Plugins
+#### Plugins
 
 Plugins are `.bundle` files in `~/.bottombar/plugins/`. Build all included plugins:
 
@@ -21,7 +25,7 @@ cd Plugins && ./build-all.sh
 
 Create your own by copying `ExamplePlugin/` and implementing the `BottomBarPlugin` protocol.
 
-## Config
+#### Config
 
 Copy `config.example.jsonc` to `~/.bottombar/config.jsonc` to control which plugins are shown and where. Changes apply live.
 
