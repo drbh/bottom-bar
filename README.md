@@ -1,5 +1,7 @@
 # BottomBar
 
+<img width="2056" height="1329" alt="bottom-bar-masked" src="https://github.com/user-attachments/assets/1e4fcff3-76ee-4585-a18b-6ee67b0b757a" />
+
 A macOS bottom status bar with hot-loadable plugins.
 
 ## Build & Run
