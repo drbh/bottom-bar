@@ -246,7 +246,11 @@ class PluginManager {
 
         do {
             config = try JSONDecoder().decode(BottomBarConfig.self, from: data)
-            let summary = "left: \(config.left?.map(\.id).joined(separator: ", ") ?? "all"), right: \(config.right?.map(\.id).joined(separator: ", ") ?? "none")"
+            let summary = config.resolvedBars.enumerated().map { index, bar in
+                let left = bar.left?.map(\.id).joined(separator: ", ") ?? "all"
+                let right = bar.right?.map(\.id).joined(separator: ", ") ?? "none"
+                return "bar \(index): left: \(left), right: \(right)"
+            }.joined(separator: "; ")
             NSLog("[PluginManager] Config loaded: \(summary)")
         } catch {
             NSLog("[PluginManager] Failed to parse config.jsonc: \(error.localizedDescription)")
