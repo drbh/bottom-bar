@@ -4,9 +4,21 @@ import PackageDescription
 let package = Package(
     name: "BottomBar",
     platforms: [.macOS(.v13)],
+    products: [
+        .library(
+            name: "BottomBarSDK",
+            type: .dynamic,
+            targets: ["BottomBarSDK"]
+        )
+    ],
     targets: [
+        .target(
+            name: "BottomBarSDK",
+            path: "Sources/BottomBarSDK"
+        ),
         .executableTarget(
             name: "BottomBar",
+            dependencies: ["BottomBarSDK"],
             path: "Sources/BottomBar",
             exclude: ["Info.plist"],
             linkerSettings: [

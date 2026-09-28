@@ -8,32 +8,89 @@ class BottomBarState: ObservableObject {
     @Published var activeItemId: String? = nil
 }
 
+/// Coordinates panel dismissal across multiple bar controllers.
+class BarCoordinator {
+    private var controllers: [BottomBarController] = []
+
+    func register(_ controller: BottomBarController) {
+        controllers.append(controller)
+    }
+
+    func dismissAllPanels(except: BottomBarController? = nil) {
+        for controller in controllers where controller !== except {
+            controller.dismissAllPanels()
+        }
+    }
+}
+
 /// Manages the bottom bar window and popover panels.
 class BottomBarController {
     static let barHeight: CGFloat = 24
     static let arrowHeight: CGFloat = 8
 
     private var barWindow: NSWindow!
-    private var items: [BottomBarItem] = []
-    private var rightItems: [BottomBarItem] = []
+    private var allItems: [BottomBarItem] = []
     private var openPanels: [String: NSWindow] = [:]
     private let state = BottomBarState()
     private var localMonitor: Any?
     private var globalMonitor: Any?
+    private var mouseTrackingTimer: Timer?
 
-    init(items: [BottomBarItem], rightItems: [BottomBarItem] = []) {
-        self.items = items
-        self.rightItems = rightItems
+    /// Vertical offset from the bottom of the screen.
+    let yOffset: CGFloat
+    /// Background color string from config: hex color or "none".
+    var backgroundSetting: String?
+    /// Whether clicks on empty bar areas pass through to windows below.
+    var passthrough: Bool = false {
+        didSet {
+            guard passthrough != oldValue, barWindow != nil else { return }
+            if passthrough {
+                barWindow.ignoresMouseEvents = true
+                startMouseTracking()
+            } else {
+                mouseTrackingTimer?.invalidate()
+                mouseTrackingTimer = nil
+                barWindow.ignoresMouseEvents = false
+            }
+        }
+    }
+    /// Top border color string from config: hex color or "none".
+    var borderColorSetting: String?
+    /// Shared coordinator for cross-bar panel dismissal.
+    weak var coordinator: BarCoordinator?
+
+    private var items: [BottomBarItem] {
+        allItems.filter { $0.side == "left" }
+    }
+
+    private var rightItems: [BottomBarItem] {
+        allItems.filter { $0.side == "right" }
+    }
+
+    init(items: [BottomBarItem], yOffset: CGFloat = 0) {
+        self.allItems = items
+        self.yOffset = yOffset
     }
 
     func addItem(_ item: BottomBarItem) {
-        items.append(item)
+        allItems.append(item)
         rebuildBarContent()
     }
 
     func removeItem(id: String) {
-        items.removeAll { $0.id == id }
+        allItems.removeAll { $0.id == id }
         dismissPanel(id: id)
+        rebuildBarContent()
+    }
+
+    /// Replace all plugin-loaded items (called by PluginManager on hot-reload).
+    func replacePluginItems(_ newItems: [BottomBarItem]) {
+        let oldIds = Set(allItems.map(\.id))
+        let newIds = Set(newItems.map(\.id))
+        for id in oldIds.subtracting(newIds) {
+            dismissPanel(id: id)
+        }
+        allItems = newItems
         rebuildBarContent()
     }
 
@@ -42,7 +99,7 @@ class BottomBarController {
 
         let barFrame = NSRect(
             x: screen.frame.origin.x,
-            y: screen.frame.origin.y,
+            y: screen.frame.origin.y + yOffset,
             width: screen.frame.width,
             height: Self.barHeight
         )
@@ -58,11 +115,12 @@ class BottomBarController {
         barWindow.isOpaque = false
         barWindow.backgroundColor = .clear
         barWindow.hasShadow = false
-        barWindow.ignoresMouseEvents = false
+        barWindow.ignoresMouseEvents = passthrough
 
         rebuildBarContent()
         barWindow.orderFrontRegardless()
         installEventMonitors()
+        if passthrough { startMouseTracking() }
     }
 
     // MARK: - Private
@@ -73,11 +131,13 @@ class BottomBarController {
             items: items,
             rightItems: rightItems,
             state: state,
+            background: backgroundSetting,
+            borderColor: borderColorSetting,
             onItemClick: { [weak self] itemId, frame in
                 self?.togglePanel(for: itemId, relativeTo: frame)
             }
         )
-        barWindow.contentView = NSHostingView(rootView: view)
+        barWindow.contentView = ClickThroughHostingView(rootView: view)
     }
 
     private func togglePanel(for itemId: String, relativeTo buttonFrame: NSRect) {
@@ -87,6 +147,7 @@ class BottomBarController {
         }
 
         for key in openPanels.keys { dismissPanel(id: key) }
+        coordinator?.dismissAllPanels(except: self)
 
         let allItems = items + rightItems
         guard let item = allItems.first(where: { $0.id == itemId }),
@@ -98,15 +159,39 @@ class BottomBarController {
         let size = item.panelSize
         guard size != .zero else { return }
 
-        let totalHeight = size.height + Self.arrowHeight
+        let panelWidth = size.width
+        let innerContent = item.makeContent(close: { [weak self] in
+            self?.dismissAllPanels()
+        })
+
+        // Build the full panel view
+        // Use a temporary x position; we'll set the real frame after measuring
+        let arrowXGuess = buttonFrame.midX - (buttonFrame.midX - panelWidth / 2)
+
+        let wrapperView = PanelWrapperView(
+            arrowXOffset: arrowXGuess,
+            panelWidth: panelWidth,
+            innerContent: innerContent
+        )
+
+        let hostingView = NSHostingView(rootView: wrapperView)
+        // Give it the target width so it can compute height
+        hostingView.frame.size.width = panelWidth
+        hostingView.layoutSubtreeIfNeeded()
+        let measuredHeight = hostingView.fittingSize.height
+        let contentHeight = measuredHeight > 0 ? measuredHeight : (size.height + Self.arrowHeight)
+
+        // Panel sits just above this bar
+        let panelY = screen.frame.origin.y + yOffset + Self.barHeight + 1
+        let maxHeight = screen.visibleFrame.maxY - panelY
+        let clampedHeight = min(contentHeight, maxHeight)
 
         let panelX = min(
-            max(buttonFrame.midX - size.width / 2, screen.frame.origin.x + 4),
-            screen.frame.origin.x + screen.frame.width - size.width - 4
+            max(buttonFrame.midX - panelWidth / 2, screen.frame.origin.x + 4),
+            screen.frame.origin.x + screen.frame.width - panelWidth - 4
         )
-        let panelY = screen.frame.origin.y + Self.barHeight + 1
 
-        let panelFrame = NSRect(x: panelX, y: panelY, width: size.width, height: totalHeight)
+        let panelFrame = NSRect(x: panelX, y: panelY, width: panelWidth, height: clampedHeight)
 
         let panel = NSPanel(
             contentRect: panelFrame,
@@ -120,23 +205,22 @@ class BottomBarController {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
 
-        let arrowScreenX = buttonFrame.midX
-        let arrowRelativeX = arrowScreenX - panelFrame.origin.x
+        // Recompute arrow position with actual panel frame
+        let arrowRelativeX = buttonFrame.midX - panelFrame.origin.x
 
-        let content = PanelWrapperView(
+        // Rebuild with correct arrow offset
+        let finalContent = PanelWrapperView(
             arrowXOffset: arrowRelativeX,
-            panelWidth: size.width,
-            innerContent: item.makeContent(close: { [weak self] in
-                self?.dismissAllPanels()
-            })
+            panelWidth: panelWidth,
+            innerContent: innerContent
         )
 
-        panel.contentView = NSHostingView(rootView: content)
+        panel.contentView = NSHostingView(rootView: finalContent)
         panel.orderFrontRegardless()
         openPanels[itemId] = panel
     }
 
-    private func dismissAllPanels() {
+    func dismissAllPanels() {
         for key in openPanels.keys { dismissPanel(id: key) }
         state.activeItemId = nil
     }
@@ -157,6 +241,36 @@ class BottomBarController {
         }
 
         dismissAllPanels()
+    }
+
+    private func startMouseTracking() {
+        mouseTrackingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            self?.updateMousePassthrough()
+        }
+    }
+
+    private func updateMousePassthrough() {
+        guard let window = barWindow else { return }
+        let mouse = NSEvent.mouseLocation
+
+        // If mouse isn't in the bar window, ensure passthrough
+        guard window.frame.contains(mouse) else {
+            if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
+            return
+        }
+
+        // Convert screen point to window coordinates
+        let windowPoint = NSPoint(
+            x: mouse.x - window.frame.origin.x,
+            y: mouse.y - window.frame.origin.y
+        )
+
+        if let hostingView = window.contentView as? ClickThroughHostingView<BottomBarView> {
+            let overItem = hostingView.isOverBarItem(windowPoint)
+            if window.ignoresMouseEvents == overItem {
+                window.ignoresMouseEvents = !overItem
+            }
+        }
     }
 
     private func installEventMonitors() {
