@@ -10,15 +10,23 @@ class CpuBarPlugin: NSObject, BottomBarPlugin {
     let panelWidth: CGFloat = 0
     let panelHeight: CGFloat = 0
 
+    /// Orange at >=75%, red at >=90%. Off by default; enable with `"config": { "color": true }`.
+    private var colorize = false
+
+    func setConfiguration(_ config: [String: Any]) {
+        if let b = config["color"] as? Bool { colorize = b }
+    }
+
     func makeContentView(close: @escaping () -> Void) -> NSView { NSView() }
 
     func makeBarNSView() -> NSView? {
-        NSHostingView(rootView: CpuInlineView())
+        NSHostingView(rootView: CpuInlineView(colorize: colorize))
     }
 }
 
 private class CpuModel: ObservableObject {
     @Published var usage: String = "  0%"
+    @Published var percent: Double = 0
     private var timer: Timer?
     private var prevInfo: host_cpu_load_info?
 
@@ -45,6 +53,7 @@ private class CpuModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.usage = String(format: "%3.0f%%", pct)
+            self.percent = pct
         }
     }
 
@@ -64,6 +73,7 @@ private class CpuModel: ObservableObject {
 
 private struct CpuInlineView: View {
     @StateObject private var model = CpuModel()
+    let colorize: Bool
 
     var body: some View {
         HStack(spacing: 3) {
@@ -72,7 +82,15 @@ private struct CpuInlineView: View {
                 .foregroundColor(.secondary)
             Text(model.usage)
                 .font(BarFont.regular(12))
+                .foregroundColor(color)
         }
         .padding(.horizontal, 6)
+    }
+
+    private var color: Color {
+        guard colorize else { return .primary }
+        if model.percent >= 90 { return .red }
+        if model.percent >= 75 { return .orange }
+        return .primary
     }
 }
